@@ -1,7 +1,7 @@
 (function() {
     'use strict';
 
-    const VIEW_ID = '40407424469645';
+    const VIEW_ID = '48510303349389';
     const REFRESH_INTERVAL = 60000; // Atualiza a cada 1 minuto
 
     // ==========================================

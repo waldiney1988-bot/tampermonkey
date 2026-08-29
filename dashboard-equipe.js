@@ -50,14 +50,14 @@
     // ESTRUTURA HTML DO DASHBOARD
     // ==========================================
     const trigger = document.createElement('div'); trigger.id = 'pm-dash-trigger';
-    trigger.innerHTML = `<button id="pm-dash-btn" title="Dashboard da Equipe (Hoje)">📊</button>`;
+    trigger.innerHTML = `<button id="pm-dash-btn" title="Dashboard da Equipe">📊</button>`;
     
     const backdrop = document.createElement('div'); backdrop.id = 'pm-dash-backdrop';
     
     const panel = document.createElement('div'); panel.id = 'pm-dash-panel';
     panel.innerHTML = `
         <div class="pm-dash-header">
-            <h2>📊 Monitoramento da Equipe (Hoje)</h2>
+            <h2>📊 Monitoramento da Equipe</h2>
             <button class="pm-dash-close">&times;</button>
         </div>
         <div class="pm-dash-content" id="pm-dash-body">
@@ -68,18 +68,31 @@
     document.body.append(backdrop, panel, trigger);
 
     // ==========================================
-    // LÓGICA DE DADOS (ZENDESK API)
+    // LÓGICA DE DADOS (ZENDESK API COM PAGINAÇÃO)
     // ==========================================
     async function fetchDashboardData() {
         try {
-            // Puxa os tickets da view e inclui os dados dos usuários em uma única chamada
-            const res = await fetch(`/api/v2/views/${VIEW_ID}/tickets.json?include=users`);
-            if (!res.ok) throw new Error('Falha ao buscar view');
-            const data = await res.json();
+            let todosTickets = [];
+            let todosUsers = [];
             
-            processarDados(data.tickets || [], data.users || []);
+            // Força a API a trazer de 100 em 100 para ser mais rápido
+            let url = `/api/v2/views/${VIEW_ID}/tickets.json?include=users&per_page=100`;
+
+            // Loop de paginação: continua buscando enquanto houver uma "próxima página"
+            while (url) {
+                const res = await fetch(url);
+                if (!res.ok) throw new Error('Falha ao buscar view');
+                const data = await res.json();
+                
+                todosTickets = todosTickets.concat(data.tickets || []);
+                todosUsers = todosUsers.concat(data.users || []);
+                
+                url = data.next_page; // Se tiver mais páginas, a URL muda. Se não, fica nula e quebra o loop.
+            }
+            
+            processarDados(todosTickets, todosUsers);
         } catch (error) {
-            document.getElementById('pm-dash-body').innerHTML = `<div class="pm-loading-state" style="color: #e34f32;">Erro ao carregar dados. Verifique o ID da View.</div>`;
+            document.getElementById('pm-dash-body').innerHTML = `<div class="pm-loading-state" style="color: #e34f32;">Erro ao carregar dados. Verifique o ID da View e sua conexão.</div>`;
         }
     }
 
@@ -87,8 +100,6 @@
         // Mapeia os usuários para pegar o nome pelo ID facilmente
         const mapUsuarios = {};
         users.forEach(u => mapUsuarios[u.id] = u.name);
-
-        const dataDeHoje = new Date().toDateString(); // Ex: "Sat Aug 29 2026"
         
         let stats = {
             totalAbertos: 0,
@@ -97,26 +108,30 @@
         };
 
         tickets.forEach(t => {
-            // Verifica se o ticket foi atualizado ou criado HOJE
-            const dataAtualizacao = new Date(t.updated_at).toDateString();
-            const dataCriacao = new Date(t.created_at).toDateString();
+            // Agora o script confia 100% no seu Filtro. Se o ticket está na View, ele será contado.
+            // Separamos apenas o Status:
             
-            if (dataAtualizacao === dataDeHoje || dataCriacao === dataDeHoje) {
-                const isResolvido = ['solved', 'closed'].includes(t.status);
-                const isAberto = ['new', 'open', 'pending', 'hold'].includes(t.status);
+            const isAberto = ['new', 'open', 'pending', 'hold'].includes(t.status);
+            const isResolvido = ['solved', 'closed'].includes(t.status);
 
-                if (isResolvido) stats.totalResolvidos++;
-                if (isAberto) stats.totalAbertos++;
+            // Adicionando qualquer ticket ao painel geral (mesmo se for "cancelado", vai entrar como resolvido se estiver na categoria)
+            if (isResolvido || (!isAberto && !isResolvido)) {
+                stats.totalResolvidos++;
+            } else if (isAberto) {
+                stats.totalAbertos++;
+            }
 
-                if (t.assignee_id) {
-                    const nomeAgente = mapUsuarios[t.assignee_id] || 'Desconhecido';
-                    
-                    if (!stats.agentes[nomeAgente]) {
-                        stats.agentes[nomeAgente] = { abertos: 0, resolvidos: 0 };
-                    }
+            if (t.assignee_id) {
+                const nomeAgente = mapUsuarios[t.assignee_id] || 'Desconhecido';
+                
+                if (!stats.agentes[nomeAgente]) {
+                    stats.agentes[nomeAgente] = { abertos: 0, resolvidos: 0 };
+                }
 
-                    if (isResolvido) stats.agentes[nomeAgente].resolvidos++;
-                    if (isAberto) stats.agentes[nomeAgente].abertos++;
+                if (isResolvido || (!isAberto && !isResolvido)) {
+                    stats.agentes[nomeAgente].resolvidos++;
+                } else if (isAberto) {
+                    stats.agentes[nomeAgente].abertos++;
                 }
             }
         });
@@ -153,12 +168,12 @@
                     <tr>
                         <th>Analista</th>
                         <th style="text-align: center;">Abertos / Pendentes</th>
-                        <th style="text-align: center;">Resolvidos Hoje</th>
+                        <th style="text-align: center;">Resolvidos / Fechados</th>
                     </tr>
                 </thead>
                 <tbody>${tbody}</tbody>
                </table>`
-            : `<div class="pm-loading-state">Nenhum chamado movimentado nesta view hoje.</div>`;
+            : `<div class="pm-loading-state">Nenhum chamado listado nesta view no momento.</div>`;
 
         const agora = new Date();
         const horaAtual = String(agora.getHours()).padStart(2, '0') + ':' + String(agora.getMinutes()).padStart(2, '0');
@@ -175,7 +190,7 @@
                 </div>
             </div>
             ${tableHTML}
-            <div class="pm-last-update">Última atualização automática: ${horaAtual}</div>
+            <div class="pm-last-update">Última atualização: ${horaAtual} (Total capturado: ${stats.totalAbertos + stats.totalResolvidos})</div>
         `;
     }
 
@@ -193,7 +208,7 @@
     document.getElementById('pm-dash-btn').onclick = () => {
         panel.style.display = 'flex';
         backdrop.style.display = 'block';
-        document.getElementById('pm-dash-body').innerHTML = `<div class="pm-loading-state">Atualizando métricas...</div>`;
+        document.getElementById('pm-dash-body').innerHTML = `<div class="pm-loading-state">Lendo todas as páginas da view...</div>`;
         fetchDashboardData();
     };
 

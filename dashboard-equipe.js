@@ -9,7 +9,7 @@
     // ==========================================
     const style = document.createElement('style');
     style.innerHTML = `
-        #pm-dash-trigger { position: fixed; bottom: 210px; left: 0; z-index: 99999; font-family: system-ui, -apple-system, sans-serif; }
+        #pm-dash-trigger { position: fixed; bottom: 100px; left: 0; z-index: 99999; font-family: system-ui, -apple-system, sans-serif; }
         #pm-dash-btn { background: #1f73b7; color: #fff; width: 46px; height: 46px; border-radius: 0 10px 10px 0; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 20px; box-shadow: 2px 2px 10px rgba(0,0,0,0.3); border: none; transition: background 0.2s; }
         #pm-dash-btn:hover { background: #145b94; }
         
